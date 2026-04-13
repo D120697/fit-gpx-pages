@@ -13,6 +13,7 @@
     "vite": "^8.0.4"
   },
   "dependencies": {
+    "@garmin/fitsdk": "^21.200.0",
     "fit-file-parser": "^2.3.3",
     "gcoord": "^1.0.7"
   }

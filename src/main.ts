@@ -1,13 +1,13 @@
 import './style.css';
-import { convertPreservedFitDataToWgs84, convertTrackPointsToWgs84 } from './lib/coords';
-import { downloadTextFile } from './lib/download';
-import { buildGpx } from './lib/gpx';
+import { convertTrackPointsToWgs84 } from './lib/coords';
+import { downloadFile } from './lib/download';
+import { convertFitFileToWgs84 } from './lib/fit-binary';
 import { parseFitFile, type CoordSystem, type FitSummary, type TrackPoint } from './lib/fit';
 
 interface ConversionResult {
   points: TrackPoint[];
   summary: FitSummary;
-  gpx: string;
+  fitBytes: Uint8Array;
 }
 
 const COORD_LABELS: Record<CoordSystem, string> = {
@@ -27,9 +27,9 @@ app.innerHTML = `
     <header class="hero">
       <div>
         <span class="hero-badge">GitHub Pages Ready</span>
-        <h1>FIT → GPX 转换器</h1>
+        <h1>FIT → FIT 坐标修正器</h1>
         <p class="hero-copy">
-          直接在浏览器里把 <code>.fit</code> 转成 <code>.gpx</code>，并可将中国坐标（GCJ-02 / BD-09）转换为国际标准 <strong>WGS84</strong>。
+          直接在浏览器里读取 <code>.fit</code>，仅转换其中的中国坐标（GCJ-02 / BD-09）到 <strong>WGS84</strong>，输出仍然是 <code>.fit</code>。
         </p>
       </div>
       <div class="privacy-card">
@@ -42,7 +42,7 @@ app.innerHTML = `
       <section class="panel controls-panel">
         <div class="section-heading">
           <h2>上传与转换</h2>
-          <p>推荐 Garmin / Coros / Suunto / Apple Watch 导出的 FIT 文件。</p>
+          <p>推荐 Garmin / Magene / Coros / Suunto / Apple Watch 导出的 FIT 文件。</p>
         </div>
 
         <label class="upload-card" id="uploadCard" for="fitFile">
@@ -62,8 +62,8 @@ app.innerHTML = `
           </label>
 
           <label class="field field-readonly">
-            <span>输出 GPX 坐标系</span>
-            <div class="readonly-value">WGS84（国际标准）</div>
+            <span>输出 FIT 坐标系</span>
+            <div class="readonly-value">WGS84（仅改坐标字段）</div>
           </label>
         </div>
 
@@ -84,7 +84,7 @@ app.innerHTML = `
       <section class="panel result-panel">
         <div class="section-heading">
           <h2>转换结果</h2>
-          <p>成功后可直接下载 GPX，用于 Garmin Connect、Strava、地图工具或 GIS 软件。</p>
+          <p>成功后可直接下载修正后的 FIT，用于 Garmin Connect、Strava 等运动平台。</p>
         </div>
 
         <div class="summary-grid" id="summaryGrid"></div>
@@ -96,10 +96,10 @@ app.innerHTML = `
 
         <div class="download-card" id="downloadCard" hidden>
           <div>
-            <h3>GPX 已生成</h3>
-            <p>下载的是 WGS84 坐标的标准 GPX 文件，可继续导入到各种运动平台或地图工具。</p>
+            <h3>FIT 已生成</h3>
+            <p>下载的是 WGS84 坐标的 FIT 文件，其他消息字段会尽量按原样重编码并保留。</p>
           </div>
-          <button id="downloadButton" class="primary-button" type="button">下载 GPX</button>
+          <button id="downloadButton" class="primary-button" type="button">下载 FIT</button>
         </div>
       </section>
     </main>
@@ -199,6 +199,14 @@ function deriveTrackName(filename: string) {
   return filename.replace(/\.fit$/iu, '').trim() || 'converted-track';
 }
 
+function deriveOutputFilename(filename: string, sourceCoordValue: CoordSystem) {
+  if (sourceCoordValue === 'WGS84') {
+    return filename;
+  }
+
+  return `${deriveTrackName(filename)}_wgs84.fit`;
+}
+
 function setStatus(message: string, tone: 'info' | 'success' | 'error' = 'info') {
   statusBanner.dataset.tone = tone;
   statusBanner.textContent = message;
@@ -234,7 +242,7 @@ function renderSummary(result: ConversionResult | null) {
 
   const distance = result.summary.totalDistanceKm ?? estimateDistanceKm(result.points);
   const coordAction = state.sourceCoord === 'WGS84'
-    ? '源文件已按 WGS84 输出，未额外偏移。'
+    ? '源文件按 WGS84 处理，导出为原样 FIT 文件。'
     : `已将 ${COORD_LABELS[state.sourceCoord]} 转成 WGS84。`;
 
   summaryGrid.innerHTML = `
@@ -263,7 +271,7 @@ function renderSummary(result: ConversionResult | null) {
       <li>输出坐标系：<strong>WGS84</strong></li>
       <li>运动类型：<strong>${result.summary.sport ?? '未识别'}</strong></li>
       <li>文件处理方式：<strong>浏览器本地完成</strong></li>
-      <li>FIT 解析数据：<strong>已保留到 GPX 扩展，仅坐标字段被转换</strong></li>
+      <li>输出文件：<strong>FIT 原样重编码，仅转换坐标相关字段并重算 CRC</strong></li>
     </ul>
   `;
 
@@ -322,7 +330,7 @@ async function handleConvert() {
 
   convertButton.disabled = true;
   convertButton.textContent = '转换中...';
-  setStatus('正在解析 FIT 文件并生成 GPX，请稍候...', 'info');
+  setStatus('正在解析并重写 FIT 文件，请稍候...', 'info');
 
   try {
     const parsed = await parseFitFile(state.file);
@@ -332,28 +340,20 @@ async function handleConvert() {
     }
 
     const convertedPoints = convertTrackPointsToWgs84(parsed.points, state.sourceCoord);
-    const convertedPreservedData = convertPreservedFitDataToWgs84(parsed.preservedData, state.sourceCoord);
     const summary: FitSummary = {
       ...parsed.summary,
       totalDistanceKm: parsed.summary.totalDistanceKm ?? estimateDistanceKm(convertedPoints),
     };
-
-    const gpx = buildGpx({
-      points: convertedPoints,
-      trackName: deriveTrackName(state.file.name),
-      originalCoordSystem: state.sourceCoord,
-      preservedData: convertedPreservedData,
-      sport: summary.sport,
-    });
+    const fitBytes = await convertFitFileToWgs84(state.file, state.sourceCoord);
 
     state.result = {
       points: convertedPoints,
       summary,
-      gpx,
+      fitBytes,
     };
 
     renderSummary(state.result);
-    setStatus(`转换完成：已生成 ${convertedPoints.length.toLocaleString('zh-CN')} 个轨迹点的 GPX 文件。`, 'success');
+    setStatus(`转换完成：已生成 ${convertedPoints.length.toLocaleString('zh-CN')} 个轨迹点的 FIT 文件。`, 'success');
   } catch (error) {
     resetResult();
     const message = error instanceof Error ? error.message : '转换失败，请换一个 FIT 文件再试。';
@@ -390,10 +390,10 @@ downloadButton.addEventListener('click', () => {
     return;
   }
 
-  downloadTextFile(
-    state.result.gpx,
-    `${deriveTrackName(state.file.name)}.gpx`,
-    'application/gpx+xml;charset=utf-8',
+  downloadFile(
+    state.result.fitBytes,
+    deriveOutputFilename(state.file.name, state.sourceCoord),
+    'application/vnd.ant.fit',
   );
 });
 
