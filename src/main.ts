@@ -343,6 +343,7 @@ async function handleConvert() {
       trackName: deriveTrackName(state.file.name),
       originalCoordSystem: state.sourceCoord,
       preservedData: convertedPreservedData,
+      sport: summary.sport,
     });
 
     state.result = {

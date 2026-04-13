@@ -5,6 +5,50 @@ interface BuildGpxOptions {
   trackName: string;
   originalCoordSystem: CoordSystem;
   preservedData: FitPreservedData;
+  sport?: string;
+}
+
+function normalizeSportForGpx(sport?: string) {
+  if (!sport) {
+    return 'activity';
+  }
+
+  const normalized = sport.trim().toLowerCase();
+
+  if ([
+    'cycling',
+    'bike',
+    'biking',
+    'road',
+    'road_cycling',
+    'gravel_cycling',
+    'mountain',
+    'mountain_biking',
+    'cyclocross',
+    'track_cycling',
+    'indoor_cycling',
+    'commuting',
+    'recumbent',
+    'hand_cycling',
+    'e_bike_fitness',
+    'e_bike_mountain',
+  ].includes(normalized)) {
+    return 'ride';
+  }
+
+  if (['running', 'run', 'trail_running', 'track_running', 'indoor_running'].includes(normalized)) {
+    return 'run';
+  }
+
+  if (['walking', 'walk', 'hiking', 'casual_walking', 'speed_walking'].includes(normalized)) {
+    return normalized === 'hiking' ? 'hike' : 'walk';
+  }
+
+  if (['swimming', 'lap_swimming', 'open_water'].includes(normalized)) {
+    return 'swim';
+  }
+
+  return normalized;
 }
 
 function escapeXml(value: string) {
@@ -61,8 +105,9 @@ function buildTrackExtensions(point: TrackPoint) {
   return `<extensions><gpxtpx:TrackPointExtension>${parts.join('')}</gpxtpx:TrackPointExtension></extensions>`;
 }
 
-export function buildGpx({ points, trackName, originalCoordSystem, preservedData }: BuildGpxOptions) {
+export function buildGpx({ points, trackName, originalCoordSystem, preservedData, sport }: BuildGpxOptions) {
   const createdAt = points[0]?.time ?? new Date().toISOString();
+  const gpxSportType = normalizeSportForGpx(sport);
   const trackPointsXml = points
     .map((point) => {
       const ele = point.ele != null ? `<ele>${point.ele.toFixed(2)}</ele>` : '';
@@ -88,12 +133,14 @@ export function buildGpx({ points, trackName, originalCoordSystem, preservedData
     <extensions>
       <fitconv:sourceCoordSystem>${escapeXml(originalCoordSystem)}</fitconv:sourceCoordSystem>
       <fitconv:convertedCoordSystem>WGS84</fitconv:convertedCoordSystem>
+      <fitconv:originalSport>${escapeXml(sport ?? 'unknown')}</fitconv:originalSport>
+      <fitconv:gpxType>${escapeXml(gpxSportType)}</fitconv:gpxType>
       <fitconv:preservedFitJson>${stringifyPreservedJson(preservedData)}</fitconv:preservedFitJson>
     </extensions>
   </metadata>
   <trk>
     <name>${escapeXml(trackName)}</name>
-    <type>activity</type>
+    <type>${escapeXml(gpxSportType)}</type>
     <trkseg>${trackPointsXml}</trkseg>
   </trk>
 </gpx>`;

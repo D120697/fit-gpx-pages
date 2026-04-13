@@ -40,6 +40,7 @@ interface FitParseLike extends Record<string, unknown> {
   sport?: string;
   records?: RawRecord[];
   sessions?: Array<{
+    sport?: string;
     total_distance?: number;
   }>;
 }
@@ -133,7 +134,7 @@ export async function parseFitFile(file: File): Promise<{
   return {
     points,
     summary: {
-      sport: parsed.sport,
+      sport: parsed.sport ?? parsed.sessions?.[0]?.sport,
       startedAt: points.at(0)?.time,
       endedAt: points.at(-1)?.time,
       totalDistanceKm,
