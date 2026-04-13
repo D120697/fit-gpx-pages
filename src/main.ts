@@ -56,7 +56,7 @@ app.innerHTML = `
             <span>源坐标系</span>
             <select id="sourceCoord">
               <option value="WGS84">WGS84（国际坐标）</option>
-              <option value="GCJ02">GCJ-02（高德 / 腾讯）</option>
+              <option value="GCJ02" selected>GCJ-02（高德 / 腾讯）</option>
               <option value="BD09">BD-09（百度）</option>
             </select>
           </label>
@@ -124,7 +124,7 @@ const state: {
   result: ConversionResult | null;
 } = {
   file: null,
-  sourceCoord: 'WGS84',
+  sourceCoord: 'GCJ02',
   result: null,
 };
 
