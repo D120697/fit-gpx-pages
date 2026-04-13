@@ -105,11 +105,11 @@ export async function convertFitFileToWgs84(file: File, sourceCoord: CoordSystem
   const encoder = new Encoder();
   const decoder = createDecoder(buffer);
   const { errors } = decoder.read({
-    applyScaleAndOffset: false,
-    expandSubFields: false,
-    expandComponents: false,
-    convertTypesToStrings: false,
-    convertDateTimesToDates: false,
+    applyScaleAndOffset: true,
+    expandSubFields: true,
+    expandComponents: true,
+    convertTypesToStrings: true,
+    convertDateTimesToDates: true,
     includeUnknownData: false,
     mergeHeartRates: false,
     decodeMemoGlobs: false,
