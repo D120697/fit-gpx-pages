@@ -1,5 +1,5 @@
 import './style.css';
-import { convertTrackPointsToWgs84 } from './lib/coords';
+import { convertPreservedFitDataToWgs84, convertTrackPointsToWgs84 } from './lib/coords';
 import { downloadTextFile } from './lib/download';
 import { buildGpx } from './lib/gpx';
 import { parseFitFile, type CoordSystem, type FitSummary, type TrackPoint } from './lib/fit';
@@ -263,6 +263,7 @@ function renderSummary(result: ConversionResult | null) {
       <li>输出坐标系：<strong>WGS84</strong></li>
       <li>运动类型：<strong>${result.summary.sport ?? '未识别'}</strong></li>
       <li>文件处理方式：<strong>浏览器本地完成</strong></li>
+      <li>FIT 解析数据：<strong>已保留到 GPX 扩展，仅坐标字段被转换</strong></li>
     </ul>
   `;
 
@@ -331,6 +332,7 @@ async function handleConvert() {
     }
 
     const convertedPoints = convertTrackPointsToWgs84(parsed.points, state.sourceCoord);
+    const convertedPreservedData = convertPreservedFitDataToWgs84(parsed.preservedData, state.sourceCoord);
     const summary: FitSummary = {
       ...parsed.summary,
       totalDistanceKm: parsed.summary.totalDistanceKm ?? estimateDistanceKm(convertedPoints),
@@ -340,6 +342,7 @@ async function handleConvert() {
       points: convertedPoints,
       trackName: deriveTrackName(state.file.name),
       originalCoordSystem: state.sourceCoord,
+      preservedData: convertedPreservedData,
     });
 
     state.result = {

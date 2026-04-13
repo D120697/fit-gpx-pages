@@ -11,6 +11,7 @@ export interface TrackPoint {
   cadence?: number;
   distance?: number;
   speed?: number;
+  raw?: Record<string, unknown>;
 }
 
 export interface FitSummary {
@@ -20,7 +21,9 @@ export interface FitSummary {
   totalDistanceKm?: number;
 }
 
-interface RawRecord {
+export type FitPreservedData = Record<string, unknown>;
+
+interface RawRecord extends Record<string, unknown> {
   position_lat?: number;
   position_long?: number;
   altitude?: number;
@@ -33,7 +36,7 @@ interface RawRecord {
   timestamp: string;
 }
 
-interface FitParseLike {
+interface FitParseLike extends Record<string, unknown> {
   sport?: string;
   records?: RawRecord[];
   sessions?: Array<{
@@ -58,6 +61,28 @@ function toIsoString(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
+function makeSerializable<T>(value: T): T {
+  if (value instanceof Date) {
+    return value.toISOString() as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => makeSerializable(item)) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+
+    for (const [key, child] of Object.entries(value)) {
+      result[key] = makeSerializable(child);
+    }
+
+    return result as T;
+  }
+
+  return value;
+}
+
 function isValidCoordinate(lat: number, lon: number) {
   return Number.isFinite(lat)
     && Number.isFinite(lon)
@@ -65,7 +90,11 @@ function isValidCoordinate(lat: number, lon: number) {
     && Math.abs(lon) <= 180;
 }
 
-export async function parseFitFile(file: File): Promise<{ points: TrackPoint[]; summary: FitSummary }> {
+export async function parseFitFile(file: File): Promise<{
+  points: TrackPoint[];
+  summary: FitSummary;
+  preservedData: FitPreservedData;
+}> {
   const buffer = await file.arrayBuffer();
   const parser = new FitParser({
     force: true,
@@ -75,7 +104,7 @@ export async function parseFitFile(file: File): Promise<{ points: TrackPoint[]; 
     elapsedRecordField: true,
   });
 
-  const parsed = await parser.parseAsync(buffer) as FitParseLike;
+  const parsed = makeSerializable(await parser.parseAsync(buffer) as unknown as FitParseLike);
   const records = Array.isArray(parsed.records) ? parsed.records : [];
 
   const points = records
@@ -93,6 +122,7 @@ export async function parseFitFile(file: File): Promise<{ points: TrackPoint[]; 
         cadence: record.cadence,
         distance: record.distance,
         speed: record.enhanced_speed ?? record.speed,
+        raw: record,
       } satisfies TrackPoint;
     })
     .filter((point) => isValidCoordinate(point.lat, point.lon));
@@ -108,5 +138,6 @@ export async function parseFitFile(file: File): Promise<{ points: TrackPoint[]; 
       endedAt: points.at(-1)?.time,
       totalDistanceKm,
     },
+    preservedData: parsed,
   };
 }
